@@ -1,7 +1,59 @@
 
 function Test-SqlConnection
 {
-    # Returns $true if connection is successful, $false otherwise
+    # Returns $true if connection is successful
+    Param(
+        [Parameter(
+            Mandatory=$true
+        )]
+        [String]$Instance,
+        [Parameter(
+            Mandatory=$true
+        )]
+        [String]$Database,
+        [Parameter(
+            ParameterSetName='IntegratedAuth',
+            Mandatory=$true
+        )]
+        [Switch]$IntegratedAuthentication,
+        [Parameter(
+            ParameterSetName='SimpleAuth',
+            Mandatory=$true
+        )]
+        [String]$UserName,
+        [Parameter(
+            ParameterSetName='SimpleAuth',
+            Mandatory=$true
+        )]
+        [SecureString]$Password
+    )
+    try
+    {
+        if ($IntegratedAuthentication.IsPresent) {
+            $connString = "Data Source=$Instance;Database=$Database;Integrated Security=True"
+        } elseif ($Username -and $Password){
+            $connString = "Data Source=$Instance;Database=$Database;User ID=$UserName;Password=" + `
+                ($Password | ConvertFrom-SecureString -AsPlainText)
+        }
+
+        $conn = New-Object System.Data.SqlClient.SqlConnection $connString
+        $conn.Open()
+        if ($conn.State -eq "Open")
+        {
+            $conn.Close()
+            return $true
+        }
+        return $false
+    }
+    catch
+    {
+        throw "Error connecting to $Instance\$($Database): $($_)"
+    }
+}
+
+function Get-SqlConnection
+{
+    # Returns $true if connection is successful
     Param(
         [Parameter(
             Mandatory=$true,
@@ -47,14 +99,7 @@ function Test-SqlConnection
                     ($Password | ConvertFrom-SecureString -AsPlainText)
             }
 
-            $conn = New-Object System.Data.SqlClient.SqlConnection $connString
-            $conn.Open()
-            if ($conn.State -eq "Open")
-            {
-                $conn.Close()
-                return $true
-            }
-            return $false
+            New-Object System.Data.SqlClient.SqlConnection $connString
         }
         catch
         {
@@ -62,4 +107,3 @@ function Test-SqlConnection
         }
     }
 }
-
