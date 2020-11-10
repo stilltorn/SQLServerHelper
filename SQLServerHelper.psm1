@@ -53,7 +53,7 @@ function Test-SqlConnection
 
 function Get-SqlConnection
 {
-    # Returns $true if connection is successful
+    # Returns a connection to a database
     Param(
         [Parameter(
             Mandatory=$true,
