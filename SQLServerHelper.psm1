@@ -1,7 +1,7 @@
 
 function Test-SqlConnection
 {
-    # Returns $true if connection is successful
+    # Returns $true if connection is successful, $false otherwise
     Param(
         [Parameter(
             Mandatory=$true,
