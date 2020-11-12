@@ -1,9 +1,14 @@
 
-# TODO load SQLServer module if it's not yet loaded
 # TODO Test simple authentication in each function
-# TODO Change $_.ToString() in catches to $_.Exception.ToString(), at least on smo 
-# catches as smo apparently will not tell anything otherwise
-# TODO Change $srv to $server, preferrably sooner rahter than later
+# TODO Function/parameter help texts
+
+if (-not (Get-Module -Name SQLServer)) {
+    try {
+        Import-Module -Name SQLServer -ErrorAction Stop
+    } catch {
+        throw "Unable to import SQLServer module: $($_.ToString())"
+    }
+}
 
 function Test-SqlInstanceConnection
 {
@@ -12,7 +17,7 @@ function Test-SqlInstanceConnection
         [Parameter(
             Mandatory=$true
         )]
-        [String]$Name,
+        [String]$InstanceName,
         [Parameter(
             ParameterSetName='IntegratedAuth',
             Mandatory=$true
@@ -32,9 +37,9 @@ function Test-SqlInstanceConnection
     try
     {
         if ($IntegratedAuthentication.IsPresent) {
-            $connString = "Data Source=$Name;Integrated Security=True"
+            $connString = "Data Source=$InstanceName;Integrated Security=True"
         } elseif ($Username -and $Password){
-            $connString = "Data Source=$Name;User ID=$UserName;Password=" + `
+            $connString = "Data Source=$InstanceName;User ID=$UserName;Password=" + `
                 ($Password | ConvertFrom-SecureString -AsPlainText)
         }
 
@@ -53,14 +58,6 @@ function Test-SqlInstanceConnection
     }
 }
 
-# TODO
-# function Test-SqlDatabaseConnection
-# {
-# }
-# It's looking like it might make sense to just test connection to an 
-# instance and then list db's from said instance and see if the database
-# you're looking for is returned. Or something along those lines.
-
 function Get-SqlColumnType
 {
     Param(
@@ -78,23 +75,21 @@ function Get-SqlColumnType
     return $cType
 }
 
-function New-SqlDatabase
+function Get-SqlDatabase
 {
-    # NOTE Not sure yet what to ultimately return here so let's go with the DB for now
-    # NOTE Also not sure what to go with if the DB exists already so let's throw an error
     Param(
         [Parameter(
             Mandatory=$true,
             Position=0,
             ValueFromPipelineByPropertyName=$true
         )]
-        [String]$Instance,
+        [String]$InstanceName,
         [Parameter(
             Mandatory=$true,
             Position=1,
             ValueFromPipelineByPropertyName=$true
         )]
-        [String]$Database,
+        [String]$DatabaseName,
         [Parameter(
             ParameterSetName='IntegratedAuth',
             Mandatory=$false,
@@ -121,41 +116,34 @@ function New-SqlDatabase
         try
         {
             if ($IntegratedAuthentication.IsPresent) {
-                $srv = New-Object Microsoft.SqlServer.Management.Smo.Server($Instance)
-                $srv.ConnectionContext.LoginSecure = $true
+                $server = New-Object Microsoft.SqlServer.Management.Smo.Server($InstanceName)
+                $server.ConnectionContext.LoginSecure = $true
             } elseif ($Username -and $Password){
-                $srv = New-Object Microsoft.SqlServer.Management.Smo.Server($Instance)
-                $srv.ConnectionContext.LoginSecure = $false
-                $srv.ConnectionContext.Login = $UserName
-                $srv.ConnectionContext.Password = ($Password | ConvertFrom-SecureString -AsPlainText)
+                $server = New-Object Microsoft.SqlServer.Management.Smo.Server($InstanceName)
+                $server.ConnectionContext.LoginSecure = $false
+                $server.ConnectionContext.Login = $UserName
+                $server.ConnectionContext.Password = ($Password | ConvertFrom-SecureString -AsPlainText)
             }
         }
         catch
         {
-            throw "Error connecting to $($Instance): $($_.ToString())"
+            throw "Error connecting to $($InstanceName): $($_.Exception.ToString())"
         }
 
         try
         {
-            if ($null -eq $srv.Databases[$Database]) {
-                $db = New-Object Microsoft.SqlServer.Management.Smo.Database($srv, $Database)
-                $db.Create()
-                return $db
-            } else {
-                throw "Database $Instance\$($Database) already exists"
-            }
+            return $server.Databases[$DatabaseName]
         }
         catch
         {
-            throw "Error creating database $Instance\$($Database): $($_.ToString())"
+            throw "Error creating database $InstanceName\$($DatabaseName): $($_.Exception.ToString())"
         }
     }
 }
 
-function New-SqlTable
+function New-SqlDatabase
 {
-    # TODO Write something here
-    # TODO Actually add proper help text
+    # Creates a new database and returns it
     Param(
         [Parameter(
             Mandatory=$true,
@@ -170,78 +158,53 @@ function New-SqlTable
         )]
         [String]$DatabaseName,
         [Parameter(
-            Mandatory=$true,
-            Position=2,
-            ValueFromPipelineByPropertyName=$true
-        )]
-        [String]$TableName,
-        [Parameter(
-            Mandatory=$true,
-            Position=2,
-            ValueFromPipelineByPropertyName=$true
-        )]
-        [String]$ColumnName, 
-        [Parameter(
-            Mandatory=$true,
-            Position=2,
-            ValueFromPipelineByPropertyName=$true
-        )]
-        [String]$ColumnType, # Such as NChar(50)
-        [Parameter(
             ParameterSetName='IntegratedAuth',
             Mandatory=$false,
-            Position=3,
+            Position=2,
             ValueFromPipelineByPropertyName=$true
         )]
         [Switch]$IntegratedAuthentication,
         [Parameter(
             ParameterSetName='SimpleAuth',
             Mandatory=$false,
-            Position=3,
+            Position=2,
             ValueFromPipelineByPropertyName=$true
         )]
         [String]$UserName,
         [Parameter(
             ParameterSetName='SimpleAuth',
             Mandatory=$false,
-            Position=4,
+            Position=3,
             ValueFromPipelineByPropertyName=$true
         )]
         [SecureString]$Password
     )
-    Begin {
-        $cType = Get-SqlColumnType -ColumnType $ColumnType
-    } Process {
+    Process {
         try
         {
             if ($IntegratedAuthentication.IsPresent) {
-                $srv = New-Object Microsoft.SqlServer.Management.Smo.Server($Instance)
-                $srv.ConnectionContext.LoginSecure = $true
+                $server = New-Object Microsoft.SqlServer.Management.Smo.Server($InstanceName)
+                $server.ConnectionContext.LoginSecure = $true
             } elseif ($Username -and $Password){
-                $srv = New-Object Microsoft.SqlServer.Management.Smo.Server($Instance)
-                $srv.ConnectionContext.LoginSecure = $false
-                $srv.ConnectionContext.Login = $UserName
-                $srv.ConnectionContext.Password = ($Password | ConvertFrom-SecureString -AsPlainText)
+                $server = New-Object Microsoft.SqlServer.Management.Smo.Server($InstanceName)
+                $server.ConnectionContext.LoginSecure = $false
+                $server.ConnectionContext.Login = $UserName
+                $server.ConnectionContext.Password = ($Password | ConvertFrom-SecureString -AsPlainText)
             }
         }
         catch
         {
-            throw "Error connecting to $($Instance): $($_.ToString())"
+            throw "Error connecting to $($InstanceName): $($_.Exception.ToString())"
         }
 
         try
         {
-            if ($null -ne $srv.Databases[$DatabaseName]) {
-                # TODO Create (and return?) table
-                # TODO Also check if the column already exists
-                $database = $srv.Databases[$DatabaseName]
-                $table = New-Object Microsoft.SqlServer.Management.Smo.Table($database, $TableName)
-                $column = New-Object Microsoft.SqlServer.Management.Smo.Column($table, $ColumnName, $cType)
-                $table.Columns.Add($column)
-                $table.Create()
+            if ($null -eq $server.Databases[$DatabaseName]) {
+                $dataBase = New-Object Microsoft.SqlServer.Management.Smo.Database($server, $DatabaseName)
+                $dataBase.Create()
+                return $dataBase
             } else {
-                throw "Unable to create table $InstanceName\$DatabaseName\$TableName, " + `
-                    "database $DatabaseName does not exist"
+                throw "Database $InstanceName\$($DatabaseName) already exists"
             }
         }
         catch
@@ -251,11 +214,10 @@ function New-SqlTable
     }
 }
 
-function New-SqlColumn
+function New-SqlTable
 {
-    # TODO Write something here
-    # TODO Actually add propers help text
-    # TODO Use *Name in parameter names across all functions
+    # Creates a new table with one minimum column required by SQL, 
+    # use Add-SqlColumn to add more columns
     Param(
         [Parameter(
             Mandatory=$true,
@@ -309,94 +271,127 @@ function New-SqlColumn
         )]
         [SecureString]$Password
     )
-    Begin {
+    Process {
         $cType = Get-SqlColumnType -ColumnType $ColumnType
-    } Process {
         try
         {
             if ($IntegratedAuthentication.IsPresent) {
-                $srv = New-Object Microsoft.SqlServer.Management.Smo.Server($InstanceName)
-                $srv.ConnectionContext.LoginSecure = $true
+                $server = New-Object Microsoft.SqlServer.Management.Smo.Server($InstanceName)
+                $server.ConnectionContext.LoginSecure = $true
             } elseif ($Username -and $Password){
-                $srv = New-Object Microsoft.SqlServer.Management.Smo.Server($InstanceName)
-                $srv.ConnectionContext.LoginSecure = $false
-                $srv.ConnectionContext.Login = $UserName
-                $srv.ConnectionContext.Password = ($Password | ConvertFrom-SecureString -AsPlainText)
+                $server = New-Object Microsoft.SqlServer.Management.Smo.Server($InstanceName)
+                $server.ConnectionContext.LoginSecure = $false
+                $server.ConnectionContext.Login = $UserName
+                $server.ConnectionContext.Password = ($Password | ConvertFrom-SecureString -AsPlainText)
             }
         }
         catch
         {
-            throw "Error connecting to $($Instance): $($_.ToString())"
+            throw "Error connecting to $($InstanceName): $($_.Exception.ToString())"
         }
-
         try
         {
-            if ($null -ne $srv.Databases[$DatabaseName]) {
-                # TODO Also check if the table exists
-                # TODO Also check if the column already exists
-                $table = $srv.Databases[$DatabaseName].Tables[$TableName]
-                $column = New-Object Microsoft.SqlServer.Management.Smo.Column($table, $ColumnName, $cType)
-                $table.Columns.Add($column)
-                $table.Alter()
-            } else {
-                throw "Unable to add column $ColumnName to $InstanceName\$DatabaseName\$TableName, " + `
-                    "database $DatabaseName does not exist"
-            }
+            $database = $server.Databases[$DatabaseName]
+            $table = New-Object Microsoft.SqlServer.Management.Smo.Table($database, $TableName)
+            $column = New-Object Microsoft.SqlServer.Management.Smo.Column($table, $ColumnName, $cType)
+            $table.Columns.Add($column)
+            $table.Create()
+            return $table
         }
         catch
         {
-            throw "Error creating database $InstanceName\$($DatabaseName): $($_.ToString())"
+            throw "Error creating table $TableName in $InstanceName\$($DatabaseName): " + `
+                "$($_.Exception.ToString())"
         }
     }
 }
 
-function Get-SqlInstanceConnection
+function Add-SqlColumn
 {
-    # Returns a connection to a database
+    # Adds a column to a table and returns said table
     Param(
         [Parameter(
             Mandatory=$true,
             Position=0,
             ValueFromPipelineByPropertyName=$true
         )]
-        [String]$Instance,
+        [String]$InstanceName,
+        [Parameter(
+            Mandatory=$true,
+            Position=1,
+            ValueFromPipelineByPropertyName=$true
+        )]
+        [String]$DatabaseName,
+        [Parameter(
+            Mandatory=$true,
+            Position=2,
+            ValueFromPipelineByPropertyName=$true
+        )]
+        [String]$TableName,
+        [Parameter(
+            Mandatory=$true,
+            Position=2,
+            ValueFromPipelineByPropertyName=$true
+        )]
+        [String]$ColumnName, 
+        [Parameter(
+            Mandatory=$true,
+            Position=2,
+            ValueFromPipelineByPropertyName=$true
+        )]
+        [String]$ColumnType, # Such as NChar(50)
         [Parameter(
             ParameterSetName='IntegratedAuth',
             Mandatory=$false,
-            Position=1,
+            Position=3,
             ValueFromPipelineByPropertyName=$true
         )]
         [Switch]$IntegratedAuthentication,
         [Parameter(
             ParameterSetName='SimpleAuth',
             Mandatory=$false,
-            Position=1,
+            Position=3,
             ValueFromPipelineByPropertyName=$true
         )]
         [String]$UserName,
         [Parameter(
             ParameterSetName='SimpleAuth',
             Mandatory=$false,
-            Position=2,
+            Position=4,
             ValueFromPipelineByPropertyName=$true
         )]
         [SecureString]$Password
     )
     Process {
+        $cType = Get-SqlColumnType -ColumnType $ColumnType
         try
         {
             if ($IntegratedAuthentication.IsPresent) {
-                $connString = "Data Source=$Instance;Integrated Security=True"
+                $server = New-Object Microsoft.SqlServer.Management.Smo.Server($InstanceName)
+                $server.ConnectionContext.LoginSecure = $true
             } elseif ($Username -and $Password){
-                $connString = "Data Source=$Instance;User ID=$UserName;Password=" + `
-                    ($Password | ConvertFrom-SecureString -AsPlainText)
+                $server = New-Object Microsoft.SqlServer.Management.Smo.Server($InstanceName)
+                $server.ConnectionContext.LoginSecure = $false
+                $server.ConnectionContext.Login = $UserName
+                $server.ConnectionContext.Password = ($Password | ConvertFrom-SecureString -AsPlainText)
             }
-
-            return New-Object System.Data.SqlClient.SqlConnection $connString
         }
         catch
         {
-            throw "Error connecting to $($Instance): $($_.ToString())"
+            throw "Error connecting to $($Instance): $($_.Exception.ToString())"
+        }
+        try
+        {
+            $table = $server.Databases[$DatabaseName].Tables[$TableName]
+            $column = New-Object Microsoft.SqlServer.Management.Smo.Column($table, $ColumnName, $cType)
+            $table.Columns.Add($column)
+            $table.Alter()
+            return $table
+        }
+        catch
+        {
+            throw "Error adding column $ColumnName to database $InstanceName\$DatabaseName " + `
+                "table $($TableName): $($_.Exception.ToString())"
         }
     }
 }
